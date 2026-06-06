@@ -29,11 +29,32 @@ The shared code (protocol and transport) lives in `Shared/`.
 
 Download the latest artifacts from the [**Releases**](https://github.com/Drakonis96/mytrackpad/releases) page.
 
-### 1. Mac — `MyTrackpad-Server.dmg`
+### 1. Mac — MyTrackpad Server
 
-1. Open the DMG and drag **MyTrackpad Server** into **Applications**.
-2. The app is **ad-hoc signed**. The first time, Gatekeeper may block it: **right-click → Open**, then confirm. (Or run `xattr -dr com.apple.quarantine "/Applications/MyTrackpad Server.app"`.)
-3. Launch it — an icon appears in the menu bar.
+The Mac app is **ad-hoc signed** (no paid Apple Developer ID / notarization). When you download an app like this from a browser, macOS marks it with the *quarantine* flag and refuses to open it — on Apple Silicon you get the dead-end **“MyTrackpad Server is damaged and can't be opened. You should move it to the Bin.”** This is Gatekeeper, not a corrupt app.
+
+**Recommended — one-line installer (no quarantine, just works).** `curl` does not set the quarantine flag, so this installs and launches cleanly:
+
+```bash
+curl -fsSL https://github.com/Drakonis96/mytrackpad/releases/latest/download/MyTrackpad-Server.zip -o /tmp/MyTrackpad-Server.zip && \
+  rm -rf "/Applications/MyTrackpad Server.app" && \
+  ditto -x -k /tmp/MyTrackpad-Server.zip /Applications && \
+  xattr -dr com.apple.quarantine "/Applications/MyTrackpad Server.app" && \
+  open "/Applications/MyTrackpad Server.app"
+```
+
+**Alternative — DMG (drag to install), then clear quarantine manually:**
+
+1. Open `MyTrackpad-Server.dmg` and drag **MyTrackpad Server** into **Applications**.
+2. Run this once (right-click → Open will *not* work for ad-hoc apps):
+   ```bash
+   xattr -dr com.apple.quarantine "/Applications/MyTrackpad Server.app"
+   ```
+3. Open it — an icon appears in the menu bar.
+
+> Clearing quarantine is also what lets the app register for **Accessibility**: a quarantined app runs from a randomized read-only path (App Translocation) and can't be granted Accessibility, which is why it doesn't show up in the list. Install it with the steps above and it will appear and work.
+>
+> Because the app is ad-hoc signed, its signature changes each release, so you'll need to re-grant Accessibility after updating.
 
 ### 2. iPhone/iPad — `MyTrackpad.ipa`
 
@@ -127,13 +148,18 @@ xcodebuild -project MyTrackpad.xcodeproj -scheme MyTrackpad \
 To install on a **real iPhone**: open the project in Xcode, select the `MyTrackpad` target,
 under *Signing & Capabilities* pick your *Team* and run. (The `DEVELOPMENT_TEAM` field is left empty on purpose.)
 
-### Regenerate the distributable artifacts (DMG + IPA)
+### Regenerate the distributable artifacts
 
 ```bash
 ./tools/build-dist.sh
 ```
 
-This produces `MyTrackpad-Server.dmg` (ad-hoc signed) and an unsigned `MyTrackpad.ipa` on your Desktop.
+This builds into `./dist/`:
+- `MyTrackpad-Server.dmg` — ad-hoc signed macOS app (drag to install).
+- `MyTrackpad-Server.zip` — same app, signed, used by the curl one-liner installer.
+- `MyTrackpad.ipa` — unsigned iOS app for sideloading.
+
+Bump the version in `project.yml` (`MARKETING_VERSION` / `CURRENT_PROJECT_VERSION`) before cutting a new release.
 
 ---
 

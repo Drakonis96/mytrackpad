@@ -9,8 +9,8 @@ options:
 settings:
   base:
     SWIFT_VERSION: "5.0"
-    MARKETING_VERSION: "1.0"
-    CURRENT_PROJECT_VERSION: "1"
+    MARKETING_VERSION: "1.0.1"
+    CURRENT_PROJECT_VERSION: "2"
     GENERATE_INFOPLIST_FILE: NO
     CODE_SIGN_STYLE: Automatic
     DEVELOPMENT_TEAM: ""
@@ -29,6 +29,8 @@ targets:
       properties:
         CFBundleDisplayName: MyTrackpad
         CFBundleIconName: AppIcon
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         UILaunchScreen: {}
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
@@ -62,6 +64,8 @@ targets:
       properties:
         CFBundleDisplayName: MyTrackpad Server
         CFBundleIconName: AppIcon
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         LSUIElement: true
         NSLocalNetworkUsageDescription: "MyTrackpad Server advertises itself on the local network so your iPhone can find it and connect."
         NSBonjourServices:

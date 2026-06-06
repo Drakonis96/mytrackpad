@@ -1,0 +1,74 @@
+name: MyTrackpad
+options:
+  bundleIdPrefix: com.drakonis96.mytrackpad
+  createIntermediateGroups: true
+  deploymentTarget:
+    iOS: "26.0"
+    macOS: "26.0"
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    GENERATE_INFOPLIST_FILE: NO
+    CODE_SIGN_STYLE: Automatic
+    DEVELOPMENT_TEAM: ""
+    SWIFT_EMIT_LOC_STRINGS: YES
+
+targets:
+  MyTrackpad:
+    type: application
+    platform: iOS
+    deploymentTarget: "26.0"
+    sources:
+      - iOS
+      - Shared
+    info:
+      path: iOS/Info.plist
+      properties:
+        CFBundleDisplayName: MyTrackpad
+        CFBundleIconName: AppIcon
+        UILaunchScreen: {}
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+        NSLocalNetworkUsageDescription: "MyTrackpad finds your Mac on the local network to connect and control it as a trackpad."
+        NSBonjourServices:
+          - "_mytrackpad._tcp"
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.drakonis96.mytrackpad
+        TARGETED_DEVICE_FAMILY: "1,2"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+
+  MyTrackpadMac:
+    type: application
+    platform: macOS
+    deploymentTarget: "26.0"
+    sources:
+      - macOS
+      - Shared
+    info:
+      path: macOS/Info.plist
+      properties:
+        CFBundleDisplayName: MyTrackpad Server
+        CFBundleIconName: AppIcon
+        LSUIElement: true
+        NSLocalNetworkUsageDescription: "MyTrackpad Server advertises itself on the local network so your iPhone can find it and connect."
+        NSBonjourServices:
+          - "_mytrackpad._tcp"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.drakonis96.mytrackpad.mac
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ENABLE_APP_SANDBOX: NO
+        ENABLE_HARDENED_RUNTIME: NO

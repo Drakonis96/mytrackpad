@@ -1,0 +1,42 @@
+{
+  "name": "MyTrackpad Source",
+  "subtitle": "Turn your iPhone/iPad into a wireless trackpad and keyboard for your Mac.",
+  "description": "Official AltStore source for MyTrackpad. Add this source in AltStore/SideStore to install MyTrackpad and receive updates.",
+  "iconURL": "https://raw.githubusercontent.com/Drakonis96/mytrackpad/main/logo.png",
+  "website": "https://github.com/Drakonis96/mytrackpad",
+  "tintColor": "#5E5CE6",
+  "featuredApps": [
+    "com.drakonis96.mytrackpad"
+  ],
+  "apps": [
+    {
+      "name": "MyTrackpad",
+      "bundleIdentifier": "com.drakonis96.mytrackpad",
+      "developerName": "Drakonis96",
+      "subtitle": "Wireless trackpad & keyboard for your Mac.",
+      "localizedDescription": "MyTrackpad turns your iPhone or iPad into a wireless trackpad and keyboard for your Mac.\n\n• Real multi-touch gestures: move, tap to click, two-finger right-click, two-finger scroll, pinch to zoom, and double-tap-and-hold to drag.\n• Built-in keyboard, arrow keys and quick-function buttons (brightness, volume, media, Mission Control, Spotlight, dictation).\n• Automatic discovery over Bonjour, plus a manual-IP fallback for networks where discovery is blocked.\n• Native, minimal Liquid Glass design for iOS 26.\n\nRequires the free companion app \"MyTrackpad Server\" running on your Mac (macOS 26+). Get it from the GitHub releases page.",
+      "iconURL": "https://raw.githubusercontent.com/Drakonis96/mytrackpad/main/iOS/Assets.xcassets/AppIcon.appiconset/icon-1024.png",
+      "tintColor": "#5E5CE6",
+      "category": "utilities",
+      "screenshotURLs": [],
+      "versions": [
+        {
+          "version": "1.0",
+          "buildVersion": "1",
+          "date": "2026-06-06",
+          "localizedDescription": "Initial release.\n\n• Multi-touch trackpad, keyboard and quick-function buttons.\n• Automatic Bonjour discovery and manual-IP connection fallback.\n• Smooth cursor movement.",
+          "downloadURL": "https://github.com/Drakonis96/mytrackpad/releases/download/v1.0/MyTrackpad.ipa",
+          "size": 2016796,
+          "minOSVersion": "26.0"
+        }
+      ],
+      "appPermissions": {
+        "entitlements": [],
+        "privacy": {
+          "NSLocalNetworkUsageDescription": "MyTrackpad finds your Mac on the local network to connect and control it as a trackpad."
+        }
+      }
+    }
+  ],
+  "news": []
+}

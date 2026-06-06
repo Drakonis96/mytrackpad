@@ -17,3 +17,9 @@ xcuserdata/
 
 # Distribution artifacts (uploaded to GitHub Releases)
 dist/
+
+# Never commit built binaries
+*.dmg
+*.zip
+*.ipa
+*.app

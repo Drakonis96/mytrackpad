@@ -190,12 +190,15 @@ final class EventInjector {
         guard let code = keyCode(for: name) else { return }
         let flags = modifierFlags(modifiers)
         let mods = modifierKeyCodes(modifiers)
+        // Cancel the repeat AND post the release on the same serial queue, so a
+        // pending repeat tick can never fire after the key-up (which would stick the key).
         repeatQueue.async { [weak self] in
-            self?.repeatTimer?.cancel()
-            self?.repeatTimer = nil
+            guard let self else { return }
+            self.repeatTimer?.cancel()
+            self.repeatTimer = nil
+            self.postKey(code, down: false, flags: flags, autorepeat: false)
+            self.pressModifiers(mods, down: false)
         }
-        postKey(code, down: false, flags: flags, autorepeat: false)
-        pressModifiers(mods, down: false)
     }
 
     /// Posts a key combination by establishing real modifier-key state first (a plain

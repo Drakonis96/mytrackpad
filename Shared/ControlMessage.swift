@@ -13,8 +13,10 @@ struct ControlMessage: Codable {
         case leftUp       // release the left button (end of a drag)
         case zoom         // pinch to zoom (amount = distance delta)
         case text         // literal text to type
-        case key          // special key (arrows, return, delete, esc...)
-        case media        // media button / quick function
+        case key          // special key, single press (arrows, return, delete, esc...)
+        case keyDown      // special key pressed and held (Mac auto-repeats until keyUp)
+        case keyUp        // release a held key
+        case media        // media button / quick function / multi-finger gesture
     }
 
     var kind: Kind

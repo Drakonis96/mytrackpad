@@ -107,6 +107,8 @@ final class TrackpadServer {
         case .zoom:       injector.zoom(amount: message.amount ?? 0)
         case .text:       if let text = message.text { injector.typeText(text) }
         case .key:        if let key = message.key { injector.pressKey(key, modifiers: message.modifiers ?? []) }
+        case .keyDown:    if let key = message.key { injector.keyDown(key, modifiers: message.modifiers ?? []) }
+        case .keyUp:      if let key = message.key { injector.keyUp(key, modifiers: message.modifiers ?? []) }
         case .media:      if let media = message.media { injector.media(media) }
         }
     }

@@ -19,6 +19,11 @@ final class EventInjector {
     /// re-sync (in case the physical mouse moved or there was a click elsewhere).
     private let resyncInterval: TimeInterval = 0.2
 
+    /// Serial queue that owns the key-repeat timer state, so `keyDown`/`keyUp`
+    /// coming from the network queue never race on the timer.
+    private let repeatQueue = DispatchQueue(label: "com.drakonis96.mytrackpad.keyrepeat")
+    private var repeatTimer: DispatchSourceTimer?
+
     init() {
         cachedBounds = displayBounds()
         let scrollSpeed: CGFloat = 1.6
@@ -50,6 +55,11 @@ final class EventInjector {
         let type: CGEventType = dragging ? .leftMouseDragged : .mouseMoved
         let event = CGEvent(mouseEventSource: source, mouseType: type,
                             mouseCursorPosition: virtualPoint, mouseButton: .left)
+        // Carry the relative delta as well as the absolute position. Without the delta
+        // fields the WindowServer derives its own delta from the (possibly stale) previous
+        // position, which makes the cursor feel choppy; providing it gives a smooth stroke.
+        event?.setIntegerValueField(.mouseEventDeltaX, value: Int64(dx.rounded()))
+        event?.setIntegerValueField(.mouseEventDeltaY, value: Int64(dy.rounded()))
         event?.post(tap: .cghidEventTap)
     }
 
@@ -100,12 +110,21 @@ final class EventInjector {
         event?.post(tap: .cghidEventTap)
     }
 
+    /// Pinch → zoom. Cmd+scroll is not honored by every app, so we accumulate the
+    /// pinch distance and emit ⌘+ / ⌘− keystrokes, which zoom reliably in browsers,
+    /// Preview, Maps, Finder, Photos, etc.
+    private var zoomAccumulator: Double = 0
     func zoom(amount: Double) {
-        // Pinch → ⌘ + scroll (zoom in browsers, Preview, Maps, etc.)
-        let event = CGEvent(scrollWheelEvent2Source: source, units: .pixel,
-                            wheelCount: 1, wheel1: Int32(amount.rounded()), wheel2: 0, wheel3: 0)
-        event?.flags = .maskCommand
-        event?.post(tap: .cghidEventTap)
+        zoomAccumulator += amount
+        let step: Double = 22  // points of finger-spread change per zoom keystroke
+        while zoomAccumulator >= step {
+            zoomAccumulator -= step
+            pressShortcut("=", modifiers: ["command"])    // zoom in (⌘+)
+        }
+        while zoomAccumulator <= -step {
+            zoomAccumulator += step
+            pressShortcut("-", modifiers: ["command"])    // zoom out (⌘−)
+        }
     }
 
     private func postMouse(_ type: CGEventType, _ point: CGPoint, _ button: CGMouseButton) {
@@ -128,18 +147,91 @@ final class EventInjector {
         up?.post(tap: .cghidEventTap)
     }
 
+    /// One-shot key press (down + up).
     func pressKey(_ name: String, modifiers: [String]) {
-        guard let code = keyCode(for: name) else { return }
-        let flags = modifierFlags(modifiers)
-        let down = CGEvent(keyboardEventSource: source, virtualKey: code, keyDown: true)
-        down?.flags = flags
-        down?.post(tap: .cghidEventTap)
-        let up = CGEvent(keyboardEventSource: source, virtualKey: code, keyDown: false)
-        up?.flags = flags
-        up?.post(tap: .cghidEventTap)
+        pressShortcut(name, modifiers: modifiers)
     }
 
-    // MARK: - Media / quick functions
+    /// Press and hold a key. The Mac generates the auto-repeat (initial delay then
+    /// steady repeats) until `keyUp` arrives — this is what makes "hold an arrow" work.
+    func keyDown(_ name: String, modifiers: [String]) {
+        guard let code = keyCode(for: name) else { return }
+        let flags = modifierFlags(modifiers)
+        let mods = modifierKeyCodes(modifiers)
+        pressModifiers(mods, down: true)
+        postKey(code, down: true, flags: flags, autorepeat: false)
+
+        repeatQueue.async { [weak self] in
+            guard let self else { return }
+            self.repeatTimer?.cancel()
+            let timer = DispatchSource.makeTimerSource(queue: self.repeatQueue)
+            timer.schedule(deadline: .now() + 0.40, repeating: 0.045)
+            var fired = 0
+            timer.setEventHandler { [weak self] in
+                guard let self else { return }
+                fired += 1
+                // Safety net: if a `keyUp` is ever lost, stop after a few seconds so a
+                // key can't get stuck repeating forever.
+                if fired > 220 {
+                    timer.cancel()
+                    self.repeatTimer = nil
+                    self.postKey(code, down: false, flags: flags, autorepeat: false)
+                    self.pressModifiers(mods, down: false)
+                    return
+                }
+                self.postKey(code, down: true, flags: flags, autorepeat: true)
+            }
+            self.repeatTimer = timer
+            timer.resume()
+        }
+    }
+
+    func keyUp(_ name: String, modifiers: [String]) {
+        guard let code = keyCode(for: name) else { return }
+        let flags = modifierFlags(modifiers)
+        let mods = modifierKeyCodes(modifiers)
+        repeatQueue.async { [weak self] in
+            self?.repeatTimer?.cancel()
+            self?.repeatTimer = nil
+        }
+        postKey(code, down: false, flags: flags, autorepeat: false)
+        pressModifiers(mods, down: false)
+    }
+
+    /// Posts a key combination by establishing real modifier-key state first (a plain
+    /// `flags` field is sometimes ignored by system shortcuts like Spaces / App Exposé).
+    private func pressShortcut(_ name: String, modifiers: [String]) {
+        guard let code = keyCode(for: name) else { return }
+        let flags = modifierFlags(modifiers)
+        let mods = modifierKeyCodes(modifiers)
+        pressModifiers(mods, down: true)
+        postKey(code, down: true, flags: flags, autorepeat: false)
+        postKey(code, down: false, flags: flags, autorepeat: false)
+        pressModifiers(mods, down: false)
+    }
+
+    private func postKey(_ code: CGKeyCode, down: Bool, flags: CGEventFlags, autorepeat: Bool) {
+        let event = CGEvent(keyboardEventSource: source, virtualKey: code, keyDown: down)
+        event?.flags = flags
+        if autorepeat { event?.setIntegerValueField(.keyboardEventAutorepeat, value: 1) }
+        event?.post(tap: .cghidEventTap)
+    }
+
+    /// Posts the modifier keys themselves (Control, Command…) so the WindowServer sees
+    /// a genuine flag state. Needed for system-wide shortcuts to trigger.
+    private func pressModifiers(_ codes: [CGKeyCode], down: Bool) {
+        guard !codes.isEmpty else { return }
+        let ordered = down ? codes : codes.reversed()
+        var accumulated: CGEventFlags = down ? [] : flags(for: codes)
+        for code in ordered {
+            if down { accumulated.insert(flag(for: code)) } else { accumulated.remove(flag(for: code)) }
+            let event = CGEvent(keyboardEventSource: source, virtualKey: code, keyDown: down)
+            event?.flags = accumulated
+            event?.post(tap: .cghidEventTap)
+        }
+    }
+
+    // MARK: - Media / quick functions / gestures
 
     func media(_ name: String) {
         switch name {
@@ -151,11 +243,23 @@ final class EventInjector {
         case "playPause":      postNXKey(NXKey.play)
         case "next":           postNXKey(NXKey.next)
         case "prev":           postNXKey(NXKey.previous)
-        case "missionControl": pressKey("up", modifiers: ["control"])
-        case "spotlight":      pressKey("space", modifiers: ["command"])
-        case "zoom":           pressKey("8", modifiers: ["command", "option"]) // Accessibility zoom
-        case "dictation":      pressKey("f5", modifiers: [])
+        case "missionControl": launchMissionControl()
+        case "appExpose":      pressShortcut("down", modifiers: ["control"])
+        case "spacePrev":      pressShortcut("left", modifiers: ["control"])
+        case "spaceNext":      pressShortcut("right", modifiers: ["control"])
+        case "spotlight":      pressShortcut("space", modifiers: ["command"])
+        case "zoomIn":         pressShortcut("=", modifiers: ["command"])
+        case "zoomOut":        pressShortcut("-", modifiers: ["command"])
+        case "dictation":      pressShortcut("f5", modifiers: [])
         default: break
+        }
+    }
+
+    /// Most reliable, shortcut-config-independent way to toggle Mission Control.
+    private func launchMissionControl() {
+        DispatchQueue.main.async {
+            let url = URL(fileURLWithPath: "/System/Applications/Mission Control.app")
+            NSWorkspace.shared.open(url)
         }
     }
 
@@ -211,6 +315,8 @@ final class EventInjector {
         case "pagedown": return 0x79
         case "f5": return 0x60
         case "8": return 0x1C
+        case "=", "plus": return 0x18
+        case "-", "minus": return 0x1B
         default: return nil
         }
     }
@@ -228,6 +334,35 @@ final class EventInjector {
             }
         }
         return flags
+    }
+
+    /// Virtual key codes for the modifier keys (left-hand variants).
+    private func modifierKeyCodes(_ modifiers: [String]) -> [CGKeyCode] {
+        modifiers.compactMap { modifier in
+            switch modifier.lowercased() {
+            case "command", "cmd": return 0x37
+            case "shift": return 0x38
+            case "option", "alt": return 0x3A
+            case "control", "ctrl": return 0x3B
+            default: return nil   // fn has no postable key code; handled via flags only
+            }
+        }
+    }
+
+    private func flag(for keyCode: CGKeyCode) -> CGEventFlags {
+        switch keyCode {
+        case 0x37: return .maskCommand
+        case 0x38: return .maskShift
+        case 0x3A: return .maskAlternate
+        case 0x3B: return .maskControl
+        default: return []
+        }
+    }
+
+    private func flags(for keyCodes: [CGKeyCode]) -> CGEventFlags {
+        var f: CGEventFlags = []
+        for code in keyCodes { f.insert(flag(for: code)) }
+        return f
     }
 
     // MARK: - Screen bounds

@@ -1,6 +1,9 @@
 import SwiftUI
 import UIKit
 
+/// Direction of a multi-finger swipe.
+enum SwipeDirection { case left, right, up, down }
+
 /// SwiftUI bridge to the UIKit touch surface.
 struct TrackpadView: UIViewRepresentable {
     let model: AppModel
@@ -32,6 +35,21 @@ struct TrackpadView: UIViewRepresentable {
         view.onLeftDown = { model.send(ControlMessage(kind: .leftDown)) }
         view.onLeftUp = { model.send(ControlMessage(kind: .leftUp)) }
         view.onZoom = { delta in model.send(ControlMessage(kind: .zoom, amount: Double(delta))) }
+        view.onSwipe = { direction, _ in
+            // Mirror a real Mac trackpad:
+            //  • swipe left  → next space   (Control + →)
+            //  • swipe right → previous space (Control + ←)
+            //  • swipe up    → Mission Control
+            //  • swipe down  → App Exposé   (Control + ↓)
+            let media: String
+            switch direction {
+            case .left:  media = "spaceNext"
+            case .right: media = "spacePrev"
+            case .up:    media = "missionControl"
+            case .down:  media = "appExpose"
+            }
+            model.send(ControlMessage(kind: .media, media: media))
+        }
     }
 }
 
@@ -44,6 +62,7 @@ final class TrackpadInputView: UIView {
     var onLeftDown: (() -> Void)?
     var onLeftUp: (() -> Void)?
     var onZoom: ((CGFloat) -> Void)?
+    var onSwipe: ((SwipeDirection, Int) -> Void)?
 
     var sensitivity: CGFloat = 1.8
     var naturalScroll = true
@@ -54,6 +73,11 @@ final class TrackpadInputView: UIView {
     private let tapMaxMovement: CGFloat = 14
     private let dragInitiationWindow: TimeInterval = 0.32
     private let scrollSensitivity: CGFloat = 1.0
+    /// A two-finger tap counts as a right-click only if the second finger landed within
+    /// this window of the first — filters out a resting thumb / accidental graze.
+    private let twoFingerTapWindow: TimeInterval = 0.20
+    /// Centroid travel (points) that triggers a 3+ finger swipe.
+    private let swipeThreshold: CGFloat = 55
 
     // State of the in-progress gesture
     private var gestureStart = Date()
@@ -64,6 +88,11 @@ final class TrackpadInputView: UIView {
     private var lastCentroid: CGPoint = .zero
     private var lastDistance: CGFloat = 0
     private var twoFingerMode: TwoFingerMode = .undecided
+    private var accumPan: CGFloat = 0
+    private var accumPinch: CGFloat = 0
+    private var reachedTwoAt: Date?
+    private var swipeFired = false
+    private var swipeAccum: CGPoint = .zero
 
     private var dragging = false
     private var lastTapEnd: Date = .distantPast
@@ -82,9 +111,15 @@ final class TrackpadInputView: UIView {
             accumulatedMovement = 0
             twoFingerMode = .undecided
             peakCount = 0
+            accumPan = 0
+            accumPinch = 0
+            reachedTwoAt = nil
+            swipeFired = false
+            swipeAccum = .zero
         }
         activeCount = touchesNow.count
         peakCount = max(peakCount, activeCount)
+        if activeCount >= 2 && reachedTwoAt == nil { reachedTwoAt = Date() }
 
         if activeCount == 1, let p = touchesNow.first?.location(in: self) {
             lastSinglePoint = p
@@ -97,47 +132,32 @@ final class TrackpadInputView: UIView {
         } else if activeCount >= 2 {
             lastCentroid = centroid(touchesNow)
             lastDistance = spread(touchesNow)
-            twoFingerMode = .undecided
+            if activeCount == 2 { twoFingerMode = .undecided }
         }
     }
 
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
         let touchesNow = activeTouches(event)
+        let count = touchesNow.count
 
-        if touchesNow.count == 1, let p = touchesNow.first?.location(in: self) {
-            let dx = p.x - lastSinglePoint.x
-            let dy = p.y - lastSinglePoint.y
-            lastSinglePoint = p
-            accumulatedMovement += hypot(dx, dy)
-            onMove?(dx * sensitivity, dy * sensitivity)
-        } else if touchesNow.count >= 2 {
-            let c = centroid(touchesNow)
-            let dx = c.x - lastCentroid.x
-            let dy = c.y - lastCentroid.y
-            lastCentroid = c
-
-            let d = spread(touchesNow)
-            let dd = d - lastDistance
-            lastDistance = d
-
-            let pan = hypot(dx, dy)
-            if twoFingerMode == .undecided {
-                if abs(dd) > 6 && abs(dd) > pan {
-                    twoFingerMode = .zoom
-                } else if pan > 2 {
-                    twoFingerMode = .scroll
-                }
+        if count == 1, let touch = touchesNow.first {
+            // Use the coalesced samples so fast strokes stay smooth on ProMotion
+            // displays instead of collapsing into a few large jumps.
+            let samples = event?.coalescedTouches(for: touch) ?? [touch]
+            var last = lastSinglePoint
+            for sample in samples {
+                let p = sample.location(in: self)
+                let dx = p.x - last.x
+                let dy = p.y - last.y
+                last = p
+                accumulatedMovement += hypot(dx, dy)
+                onMove?(dx * sensitivity, dy * sensitivity)
             }
-
-            accumulatedMovement += max(pan, abs(dd))
-            switch twoFingerMode {
-            case .scroll:
-                onScroll?(dx * scrollSensitivity, dy * scrollSensitivity)
-            case .zoom:
-                onZoom?(dd)
-            case .undecided:
-                break
-            }
+            lastSinglePoint = last
+        } else if count == 2 {
+            handleTwoFinger(touchesNow)
+        } else if count >= 3 {
+            handleSwipe(touchesNow)
         }
     }
 
@@ -149,8 +169,67 @@ final class TrackpadInputView: UIView {
     override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
         let remaining = activeTouches(event).filter { $0.phase != .ended && $0.phase != .cancelled }
         if dragging { onLeftUp?(); dragging = false }
-        if remaining.isEmpty { resetGesture() } else { activeCount = remaining.count }
+        if remaining.isEmpty { resetGesture() } else { recalibrate(remaining) }
     }
+
+    // MARK: - Two-finger (scroll / zoom)
+
+    private func handleTwoFinger(_ touchesNow: [UITouch]) {
+        let c = centroid(touchesNow)
+        let dx = c.x - lastCentroid.x
+        let dy = c.y - lastCentroid.y
+        lastCentroid = c
+
+        let d = spread(touchesNow)
+        let dd = d - lastDistance
+        lastDistance = d
+
+        let pan = hypot(dx, dy)
+        if twoFingerMode == .undecided {
+            accumPan += pan
+            accumPinch += abs(dd)
+            // A scroll keeps the finger spread roughly constant (low pinch); a pinch
+            // changes it a lot. Bias toward zoom when the spread clearly dominates.
+            if accumPinch > 14 && accumPinch > accumPan {
+                twoFingerMode = .zoom
+            } else if accumPan > 8 {
+                twoFingerMode = .scroll
+            }
+        }
+
+        accumulatedMovement += max(pan, abs(dd))
+        switch twoFingerMode {
+        case .scroll: onScroll?(dx * scrollSensitivity, dy * scrollSensitivity)
+        case .zoom:   onZoom?(dd)
+        case .undecided: break
+        }
+    }
+
+    // MARK: - Three / four-finger swipe
+
+    private func handleSwipe(_ touchesNow: [UITouch]) {
+        let c = centroid(touchesNow)
+        let dx = c.x - lastCentroid.x
+        let dy = c.y - lastCentroid.y
+        lastCentroid = c
+        swipeAccum.x += dx
+        swipeAccum.y += dy
+        accumulatedMovement += hypot(dx, dy)
+
+        guard !swipeFired else { return }
+        if abs(swipeAccum.x) > swipeThreshold || abs(swipeAccum.y) > swipeThreshold {
+            swipeFired = true
+            let fingers = peakCount
+            if abs(swipeAccum.x) > abs(swipeAccum.y) {
+                onSwipe?(swipeAccum.x < 0 ? .left : .right, fingers)
+            } else {
+                onSwipe?(swipeAccum.y < 0 ? .up : .down, fingers)
+            }
+            fireHaptic()
+        }
+    }
+
+    // MARK: - Gesture completion
 
     private func finishGesture(remaining: [UITouch]) {
         if remaining.isEmpty {
@@ -158,26 +237,43 @@ final class TrackpadInputView: UIView {
             if dragging {
                 onLeftUp?()
                 dragging = false
-            } else if accumulatedMovement < tapMaxMovement && duration < tapMaxDuration {
-                if peakCount >= 2 {
-                    onRightClick?()
-                    fireHaptic()
-                } else {
-                    onLeftClick?()
-                    lastTapEnd = Date()
-                    fireHaptic()
-                }
+            } else if !swipeFired && accumulatedMovement < tapMaxMovement && duration < tapMaxDuration {
+                classifyTap()
             }
             resetGesture()
         } else {
             // One finger lifted but at least one remains: recalibrate to avoid jumps.
-            activeCount = remaining.count
-            if remaining.count == 1, let p = remaining.first?.location(in: self) {
-                lastSinglePoint = p
-            } else {
-                lastCentroid = centroid(remaining)
-                lastDistance = spread(remaining)
+            recalibrate(remaining)
+        }
+    }
+
+    private func classifyTap() {
+        if peakCount >= 3 {
+            // Multi-finger tap: reserved for swipes; no click.
+            return
+        }
+        if peakCount == 2 {
+            // Right-click only for a deliberate, near-simultaneous two-finger tap.
+            let concurrent = reachedTwoAt.map { $0.timeIntervalSince(gestureStart) < twoFingerTapWindow } ?? false
+            if concurrent {
+                onRightClick?()
+                fireHaptic()
+                return
             }
+            // A late second touch is most likely an accidental graze → treat as left-click.
+        }
+        onLeftClick?()
+        lastTapEnd = Date()
+        fireHaptic()
+    }
+
+    private func recalibrate(_ remaining: [UITouch]) {
+        activeCount = remaining.count
+        if remaining.count == 1, let p = remaining.first?.location(in: self) {
+            lastSinglePoint = p
+        } else if remaining.count >= 2 {
+            lastCentroid = centroid(remaining)
+            lastDistance = spread(remaining)
         }
     }
 
@@ -186,6 +282,11 @@ final class TrackpadInputView: UIView {
         peakCount = 0
         accumulatedMovement = 0
         twoFingerMode = .undecided
+        accumPan = 0
+        accumPinch = 0
+        reachedTwoAt = nil
+        swipeFired = false
+        swipeAccum = .zero
     }
 
     // MARK: - Helpers

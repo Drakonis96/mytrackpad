@@ -96,18 +96,21 @@ The IPA is **unsigned** (no developer certificate is baked in). Install it with 
 | Single tap | Left click |
 | Two-finger tap | Right click (context menu) |
 | Two fingers sliding | Scroll |
-| Pinch | Zoom (⌘+scroll) |
+| Pinch | Zoom in / out (⌘+ / ⌘−) |
+| Three fingers swipe left / right | Switch to the next / previous space |
+| Three fingers swipe up | Mission Control |
+| Three fingers swipe down | App Exposé |
 | Double-tap + hold and move | Drag and drop |
 | Bottom buttons | Explicit left / right click |
 
 ## Keyboard and functions
 
 - **Keyboard:** a button opens the system keyboard; what you type (including backspace and return) is sent to the Mac.
-- **Arrow keys** and **Esc / Tab / Return / Delete**.
-- **Quick functions:** Brightness ±, Volume ±, Mute, Play/Pause, Previous/Next, Mission Control, Spotlight, Zoom (Accessibility zoom) and Dictation.
+- **Arrow keys** and **Esc / Tab / Return / Delete** — press and hold to repeat (native key auto-repeat).
+- **Quick functions:** Brightness ±, Volume ±, Mute, Play/Pause, Previous/Next, Mission Control, App windows (App Exposé), Prev/Next space, Spotlight, Zoom ± and Dictation.
 
-> Brightness, Zoom and Dictation depend on hardware and macOS settings
-> (e.g. “Use keyboard shortcuts to zoom” under *Accessibility*). Everything else works out of the box.
+> Brightness and Dictation depend on hardware and macOS settings. Switching spaces
+> uses the standard Mission Control shortcuts (Control + ← / →); everything else works out of the box.
 
 ## Settings
 

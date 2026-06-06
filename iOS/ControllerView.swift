@@ -77,7 +77,7 @@ struct ControllerView: View {
             TrackpadView(model: model)
             VStack {
                 Spacer()
-                Text("Swipe to move · tap to click · two fingers to scroll and menu")
+                Text("Move · tap = click · two-finger tap = menu · two fingers scroll/pinch · three fingers switch spaces")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
                     .multilineTextAlignment(.center)

@@ -21,6 +21,15 @@
       "screenshotURLs": [],
       "versions": [
         {
+          "version": "1.0.2",
+          "buildVersion": "3",
+          "date": "2026-06-06",
+          "localizedDescription": "Smoother cursor and fixed gestures.\n\n• Smoother cursor: full-rate (coalesced) touch sampling on iOS plus relative-delta injection on the Mac removes the stutter.\n• Fixes a left tap sometimes registering as a right-click (a resting/grazing finger no longer counts as a two-finger tap).\n• Hold an arrow (or Delete/Tab) to repeat it — keys now send press-and-hold with native auto-repeat.\n• Mission Control and Zoom buttons work reliably (Zoom is now Zoom +/− using ⌘+ / ⌘−).\n• New multi-finger gestures: three-finger swipe left/right to switch spaces, up for Mission Control, down for App Exposé. Pinch-to-zoom detection improved.\n• New quick-function buttons: App windows, Prev/Next space.",
+          "downloadURL": "https://github.com/Drakonis96/mytrackpad/releases/download/v1.0.2/MyTrackpad.ipa",
+          "size": 2023509,
+          "minOSVersion": "26.0"
+        },
+        {
           "version": "1.0.1",
           "buildVersion": "2",
           "date": "2026-06-06",

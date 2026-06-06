@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 // MARK: - Function/media button
 
@@ -12,19 +13,70 @@ struct FunctionButton: Identifiable {
 enum FunctionButtons {
     /// Media / quick functions row.
     static let all: [FunctionButton] = [
-        .init(label: "Brightness −",  systemImage: "sun.min",            media: "brightDown"),
-        .init(label: "Brightness +",  systemImage: "sun.max.fill",       media: "brightUp"),
-        .init(label: "Mission",   systemImage: "rectangle.3.group",  media: "missionControl"),
-        .init(label: "Spotlight", systemImage: "magnifyingglass",    media: "spotlight"),
-        .init(label: "Zoom",      systemImage: "plus.magnifyingglass", media: "zoom"),
-        .init(label: "Dictation",   systemImage: "mic.fill",           media: "dictation"),
-        .init(label: "Previous",  systemImage: "backward.end.fill",  media: "prev"),
-        .init(label: "Play/Pause", systemImage: "playpause.fill",    media: "playPause"),
-        .init(label: "Next", systemImage: "forward.end.fill",   media: "next"),
-        .init(label: "Mute", systemImage: "speaker.slash.fill", media: "mute"),
-        .init(label: "Vol −",     systemImage: "speaker.wave.1.fill", media: "volDown"),
-        .init(label: "Vol +",     systemImage: "speaker.wave.3.fill", media: "volUp")
+        .init(label: "Brightness −", systemImage: "sun.min",                media: "brightDown"),
+        .init(label: "Brightness +", systemImage: "sun.max.fill",           media: "brightUp"),
+        .init(label: "Mission",      systemImage: "rectangle.3.group",      media: "missionControl"),
+        .init(label: "App windows",  systemImage: "macwindow.on.rectangle", media: "appExpose"),
+        .init(label: "Prev space",   systemImage: "chevron.left.2",         media: "spacePrev"),
+        .init(label: "Next space",   systemImage: "chevron.right.2",        media: "spaceNext"),
+        .init(label: "Spotlight",    systemImage: "magnifyingglass",        media: "spotlight"),
+        .init(label: "Zoom +",       systemImage: "plus.magnifyingglass",   media: "zoomIn"),
+        .init(label: "Zoom −",       systemImage: "minus.magnifyingglass",  media: "zoomOut"),
+        .init(label: "Dictation",    systemImage: "mic.fill",               media: "dictation"),
+        .init(label: "Previous",     systemImage: "backward.end.fill",      media: "prev"),
+        .init(label: "Play/Pause",   systemImage: "playpause.fill",         media: "playPause"),
+        .init(label: "Next",         systemImage: "forward.end.fill",       media: "next"),
+        .init(label: "Mute",         systemImage: "speaker.slash.fill",     media: "mute"),
+        .init(label: "Vol −",        systemImage: "speaker.wave.1.fill",    media: "volDown"),
+        .init(label: "Vol +",        systemImage: "speaker.wave.3.fill",    media: "volUp")
     ]
+}
+
+// MARK: - Hold-to-repeat key button
+
+/// A glass button that sends `keyDown` while held and `keyUp` on release, so the Mac
+/// generates the native key auto-repeat. A quick tap sends a single key press.
+struct HoldKeyButton<Label: View>: View {
+    @EnvironmentObject private var model: AppModel
+    let key: String
+    var modifiers: [String] = []
+    var cornerRadius: CGFloat = 16
+    @ViewBuilder var label: () -> Label
+
+    @State private var pressing = false
+    private let haptic = UIImpactFeedbackGenerator(style: .light)
+
+    var body: some View {
+        label()
+            .contentShape(RoundedRectangle(cornerRadius: cornerRadius))
+            .glassEffect(.regular.interactive(), in: .rect(cornerRadius: cornerRadius))
+            .scaleEffect(pressing ? 0.93 : 1)
+            .animation(.easeOut(duration: 0.12), value: pressing)
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { _ in
+                        guard !pressing else { return }
+                        pressing = true
+                        if model.hapticsEnabled { haptic.impactOccurred(intensity: 0.5) }
+                        model.send(ControlMessage(kind: .keyDown, key: key,
+                                                  modifiers: modifiers.isEmpty ? nil : modifiers))
+                    }
+                    .onEnded { _ in
+                        guard pressing else { return }
+                        pressing = false
+                        model.send(ControlMessage(kind: .keyUp, key: key,
+                                                  modifiers: modifiers.isEmpty ? nil : modifiers))
+                    }
+            )
+            .onDisappear {
+                // Safety: release the key if the view goes away while still held.
+                if pressing {
+                    pressing = false
+                    model.send(ControlMessage(kind: .keyUp, key: key,
+                                              modifiers: modifiers.isEmpty ? nil : modifiers))
+                }
+            }
+    }
 }
 
 // MARK: - Functions panel (arrows + media)
@@ -91,8 +143,6 @@ struct FunctionsSheet: View {
 // MARK: - Special keys
 
 struct SpecialKeysRow: View {
-    @EnvironmentObject private var model: AppModel
-
     private let keys: [(String, String)] = [
         ("Esc", "escape"),
         ("Tab", "tab"),
@@ -104,13 +154,12 @@ struct SpecialKeysRow: View {
         GlassEffectContainer(spacing: 10) {
             HStack(spacing: 10) {
                 ForEach(keys, id: \.1) { item in
-                    Button(item.0) {
-                        model.send(ControlMessage(kind: .key, key: item.1))
+                    HoldKeyButton(key: item.1, cornerRadius: 14) {
+                        Text(item.0)
+                            .font(.subheadline.weight(.medium))
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 46)
                     }
-                    .font(.subheadline.weight(.medium))
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 46)
-                    .buttonStyle(.glass)
                 }
             }
         }
@@ -120,8 +169,6 @@ struct SpecialKeysRow: View {
 // MARK: - Arrow pad
 
 struct ArrowPad: View {
-    @EnvironmentObject private var model: AppModel
-
     var body: some View {
         GlassEffectContainer(spacing: 10) {
             VStack(spacing: 10) {
@@ -136,14 +183,11 @@ struct ArrowPad: View {
     }
 
     private func arrow(_ symbol: String, _ key: String) -> some View {
-        Button {
-            model.send(ControlMessage(kind: .key, key: key))
-        } label: {
+        HoldKeyButton(key: key, cornerRadius: 16) {
             Image(systemName: symbol)
                 .font(.title2.weight(.semibold))
                 .frame(width: 66, height: 52)
         }
-        .buttonStyle(.glass)
     }
 }
 
